@@ -105,16 +105,21 @@ def _build_native_fold_command(
     batch_script: str | Path | None,
     serve: bool,
 ) -> list[str]:
-    """Build the native ``$AF3_PYTHON run_alphafold_batch.py`` argv for a single Metal or CPU device."""
+    """Build the native ``$AF3_PYTHON run_alphafold_batch.py`` argv for a single CUDA, Metal or CPU device."""
     python = _require("AF3_PYTHON")
     jax_cache = _require("AF3_JAX_CACHE_DIR")
     weights = _require("AF3_MODEL_DIR")
     backend = os.environ.get("AF3_JAX_BACKEND", "").strip().lower() or "mps"
-    if backend not in ("mps", "cpu"):
-        raise ValueError(f"AF3_JAX_BACKEND must be 'mps' or 'cpu' when AF3_RUNTIME=native, got {backend!r}")
-    impl = os.environ.get("AF3_FLASH_ATTENTION_IMPLEMENTATION", "").strip().lower() or "xla"
-    if impl != "xla":
-        raise ValueError(f"AF3_FLASH_ATTENTION_IMPLEMENTATION must be 'xla' when AF3_RUNTIME=native, got {impl!r}")
+    if backend not in ("gpu", "mps", "cpu"):
+        raise ValueError(f"AF3_JAX_BACKEND must be 'gpu', 'mps' or 'cpu' when AF3_RUNTIME=native, got {backend!r}")
+    # CUDA accepts cudnn (robust on Ampere/Ada), triton or xla; mps/cpu require xla.
+    default_impl = "cudnn" if backend == "gpu" else "xla"
+    impl = os.environ.get("AF3_FLASH_ATTENTION_IMPLEMENTATION", "").strip().lower() or default_impl
+    if backend == "gpu":
+        if impl not in ("cudnn", "triton", "xla"):
+            raise ValueError(f"AF3_FLASH_ATTENTION_IMPLEMENTATION must be 'cudnn', 'triton' or 'xla' when AF3_JAX_BACKEND=gpu, got {impl!r}")
+    elif impl != "xla":
+        raise ValueError(f"AF3_FLASH_ATTENTION_IMPLEMENTATION must be 'xla' when AF3_JAX_BACKEND={backend}, got {impl!r}")
     batch_path = Path(batch_script if batch_script is not None else _DEFAULT_BATCH_SCRIPT).resolve()
     cmd = [
         python,
